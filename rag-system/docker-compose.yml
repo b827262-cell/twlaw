@@ -1,0 +1,71 @@
+services:
+  # 1. 向量資料庫
+  chromadb:
+    image: chromadb/chroma
+    container_name: chromadb
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./db:/chroma/data
+    environment:
+      - IS_PERSISTENT=TRUE
+    networks:
+      - rag-network
+
+  # 2. AI 模型大腦 (強制綁定 RTX 3060)
+  ollama:
+    image: ollama/ollama
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./data/ollama:/root/.ollama
+    # 🔥 雙重保險 1：強制注入 NVIDIA 環境變數
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=all
+    # 🔥 雙重保險 2：標準 GPU 直通寫法
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    networks:
+      - rag-network
+
+  # 3. 您的 RAG 後端 API
+  api:
+    build: .
+    container_name: rag-api
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./app:/app/app
+    depends_on:
+      - chromadb
+      - ollama
+    networks:
+      - rag-network
+
+  # 4. 前端互動介面
+  openwebui:
+    image: ghcr.io/open-webui/open-webui:latest
+    container_name: openwebui
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      - ollama
+      - api
+    volumes:
+      - ./data/openwebui:/app/backend/data
+    networks:
+      - rag-network
+
+# 建立專屬內網，讓容器彼此可以用名字互相呼叫
+networks:
+  rag-network:
+    driver: bridge
