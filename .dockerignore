@@ -1,0 +1,4 @@
+rag-system/data/
+rag-system/chroma_db/
+venv/
+.git/

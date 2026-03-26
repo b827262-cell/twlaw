@@ -4,3 +4,4 @@ venv/
 __pycache__/
 .git/
 *.pyc
+chroma_db/

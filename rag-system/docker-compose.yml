@@ -1,30 +1,30 @@
 services:
   # 1. 向量資料庫
   chromadb:
-    image: chromadb/chroma
+    image: chromadb/chroma:latest
     container_name: chromadb
+    restart: always
     ports:
       - "8000:8000"
     volumes:
-      - ./db:/chroma/data
+      - ./chroma_db:/chroma/data
     environment:
       - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=False
     networks:
       - rag-network
 
-  # 2. AI 模型大腦 (強制綁定 RTX 3060)
+  # 2. AI 模型大腦：優化 GPU 偵測機制
   ollama:
-    image: ollama/ollama
+    image: ollama/ollama:latest
     container_name: ollama
+    restart: always
     ports:
       - "11434:11434"
     volumes:
       - ./data/ollama:/root/.ollama
-    # 🔥 雙重保險 1：強制注入 NVIDIA 環境變數
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - CUDA_VISIBLE_DEVICES=all
-    # 🔥 雙重保險 2：標準 GPU 直通寫法
+    # 🔥 關鍵修正：刪除了環境變數中的 CUDA_VISIBLE_DEVICES
+    # 讓 Docker 的 GPU 直通驅動直接對接 deploy 區塊
     deploy:
       resources:
         reservations:
@@ -35,37 +35,49 @@ services:
     networks:
       - rag-network
 
-  # 3. 您的 RAG 後端 API
-  api:
-    build: .
+  # 3. RAG 決策引擎 API
+  rag-api:
+    build:
+      context: ..
+      dockerfile: rag-system/Dockerfile
     container_name: rag-api
+    restart: always
+    working_dir: /app
     ports:
       - "8001:8000"
     volumes:
-      - ./app:/app/app
+      - ../app:/app
+      - ./chroma_db:/rag-system/chroma_db
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - CHROMA_DB_PATH=/rag-system/chroma_db
+      - CHROMA_SERVER_HOST=chromadb
+      - CHROMA_SERVER_HTTP_PORT=8000
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
     depends_on:
       - chromadb
       - ollama
     networks:
       - rag-network
 
-  # 4. 前端互動介面
+  # 4. 前端操作介面
   openwebui:
     image: ghcr.io/open-webui/open-webui:latest
     container_name: openwebui
+    restart: always
     ports:
       - "3000:8080"
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-    depends_on:
-      - ollama
-      - api
+      - WEBUI_SECRET_KEY=medical_law_secret
     volumes:
       - ./data/openwebui:/app/backend/data
+    depends_on:
+      - ollama
+      - rag-api
     networks:
       - rag-network
 
-# 建立專屬內網，讓容器彼此可以用名字互相呼叫
 networks:
   rag-network:
     driver: bridge
