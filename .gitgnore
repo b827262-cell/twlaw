@@ -1,0 +1,60 @@
+# =================================================================
+# 醫事法律 AI (RAG) 決策系統 - 資安防護設定檔
+# 版本：[V004] 2026-03-27
+# 核心原則：遵循醫療法第72條，確保機敏資料不落地雲端
+# =================================================================
+
+# --- 1. 系統開發與相依套件 ---
+node_modules/
+lib/
+output/
+bin/
+obj/
+*.swp
+*.swo
+
+# --- 2. Python 環境隔離 ---
+# 忽略虛擬環境，避免數百MB的套件塞爆 Git
+venv/
+env/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# --- 3. 資安金鑰與環境變數 (保護核心安全) ---
+# 嚴禁將包含 Ollama 或資料庫連線金鑰的環境檔上傳 [cite: 32, 34]
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# --- 4. 醫事法機敏資料 (100% 資料主權保障) ---
+# 根據醫療法第72條及民法第195條，嚴格禁止病患或法規原始資料外洩 [cite: 35, 62, 63]
+# 忽略存放原始與解析後 JSON 的目錄 [cite: 54, 58]
+app/data/raw_json/
+app/data/parsed_json/
+app/data/processed/
+*.json
+*.csv
+*.xlsx
+
+# --- 5. 本地向量資料庫 (避免 GB 級檔案及索引外洩) ---
+# 忽略 ChromaDB 的實體儲存目錄，達成封閉式內網運行 [cite: 15, 39, 40]
+app/chroma_db/
+app/storage/
+*.chroma
+*.db
+
+# --- 6. Ollama 模型與生成紀錄 ---
+# 忽略地端生成的系統資料、快取與日誌
+app/logs/
+*.log
+.ollama/
+model_weights/
+
+# --- 7. OS 系統暫存 ---
+.DS_Store
+Thumbs.db

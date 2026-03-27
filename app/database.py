@@ -1,49 +1,80 @@
 import chromadb
-import sys
 import os
 
-# 🛡️ 核心路徑鎖
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-if BASE_DIR not in sys.path:
-    sys.path.insert(0, BASE_DIR)
+# 📂 關鍵修正：在 Docker 容器內，路徑必須指向掛載點 /app/chroma_db
+# 這會對應到主機上的 ~/twlaw/rag-system/chroma_db
+DB_DIR = "/app/chroma_db"
 
-# 🌐 直接對準本地資料庫
-CHROMA_PATH = "/rag-system/chroma_db"
-client = chromadb.PersistentClient(path=CHROMA_PATH)
+# 🔌 建立持久化客戶端
+client = chromadb.PersistentClient(path=DB_DIR)
 
-COLLECTION_NAME = "twlaw"
+# 📦 使用 V2 專屬 Collection (支援 Metadata)
+COLLECTION_NAME = "tw_law_medical_v2"
+collection = client.get_or_create_collection(name=COLLECTION_NAME)
 
-def query_chroma(query_text, n_results=5):
+def ingest_batch(batch_data):
+    """
+    [V003 批次寫入模組]
+    接收格式: [{"text": "...", "metadata": {...}}, ...]
+    """
+    if not batch_data:
+        return
+
+    documents = []
+    metadatas = []
+    ids = []
+
+    for item in batch_data:
+        documents.append(item["text"])
+        metadatas.append(item["metadata"])
+        
+        # 🔑 使用「法規名稱-條號」作為唯一 ID
+        law_name = item['metadata'].get('law_name', 'Unknown')
+        article_no = item['metadata'].get('article_no', '0')
+        unique_id = f"{law_name}-{article_no}"
+        ids.append(unique_id)
+
     try:
-        # 🔥 關鍵修正：拿掉 embedding_function 參數！
-        # 讓 ChromaDB 自動使用它當初存檔時的「預設模型」(default)
-        collection = client.get_collection(name=COLLECTION_NAME)
-        
-        # 直接丟文字，它會用它內建的預設模型去算向量
-        results = collection.query(
-            query_texts=[query_text],
-            n_results=n_results
+        # 🛡️ upsert 機制：若 ID 已存在則更新，不存在則新增，防止重複灌錄
+        collection.upsert(
+            documents=documents,
+            metadatas=metadatas,
+            ids=ids
         )
+    except Exception as e:
+        print(f"❌ 資料庫批次寫入失敗: {e}")
+
+def query_chroma(query_text, n_results=8, filter_metadata=None):
+    """
+    [V003 混合檢索模組]
+    支援單純語意搜尋，或加入 Metadata 過濾 (例如 filter_metadata={"category": "medical_law"})
+    """
+    try:
+        query_params = {
+            "query_texts": [query_text],
+            "n_results": n_results
+        }
         
-        # 檢查是否有抓到東西
-        if not results["documents"] or not results["documents"][0]:
-            print("⚠️ ChromaDB 回傳空結果。")
-            return "暫無相關法規"
-            
-        documents = results['documents'][0]
-        distances = results['distances'][0] if 'distances' in results else []
+        # 🎯 執行 Metadata 精準過濾 (Hybrid Search)
+        if filter_metadata:
+            query_params["where"] = filter_metadata
+
+        results = collection.query(**query_params)
         
-        # 組合前 5 名的法條給 AI 參考
-        combined_context = ""
-        print(f"\n📊 檢索雷達報告 (查詢: {query_text})")
-        for i, doc in enumerate(documents):
-            score = distances[i] if i < len(distances) else "N/A"
-            # 印出分數與前 30 個字
-            print(f"  - [命中 {i+1}] 距離分數: {score:.4f} | 內容: {doc[:30]}...") 
-            combined_context += f"【參考條文 {i+1}】\n{doc}\n\n"
+        if not results['documents'] or len(results['documents'][0]) == 0:
+            return "【暫無相關法規】"
             
-        return combined_context
+        # 合併檢索結果作為 RAG 上下文
+        context = "\n\n".join(results['documents'][0])
+        return context
 
     except Exception as e:
-        print(f"❌ ChromaDB 查詢失敗: {e}")
-        return "暫無相關法規"
+        print(f"❌ 資料庫檢索失敗: {e}")
+        return ""
+
+if __name__ == "__main__":
+    # 測試連線與顯示目前數量
+    print("-" * 30)
+    print(f"✅ V2 資料庫連線成功！")
+    print(f"📊 目前資料總數: {collection.count()} 筆")
+    print("-" * 30)

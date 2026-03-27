@@ -14,7 +14,7 @@ services:
     networks:
       - rag-network
 
-  # 2. AI 模型大腦：優化 GPU 偵測機制
+  # 2. AI 模型大腦 (修正 GPU 語法)
   ollama:
     image: ollama/ollama:latest
     container_name: ollama
@@ -23,8 +23,6 @@ services:
       - "11434:11434"
     volumes:
       - ./data/ollama:/root/.ollama
-    # 🔥 關鍵修正：刪除了環境變數中的 CUDA_VISIBLE_DEVICES
-    # 讓 Docker 的 GPU 直通驅動直接對接 deploy 區塊
     deploy:
       resources:
         reservations:
@@ -46,11 +44,11 @@ services:
     ports:
       - "8001:8000"
     volumes:
-      - ../app:/app
-      - ./chroma_db:/rag-system/chroma_db
+      - ../app:/app  # ✅ 這一行就夠了，它已經包含了 tw-law-data
+      - ./chroma_db:/app/chroma_db
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-      - CHROMA_DB_PATH=/rag-system/chroma_db
+      - CHROMA_DB_PATH=/app/chroma_db
       - CHROMA_SERVER_HOST=chromadb
       - CHROMA_SERVER_HTTP_PORT=8000
     command: uvicorn main:app --host 0.0.0.0 --port 8000
@@ -60,7 +58,7 @@ services:
     networks:
       - rag-network
 
-  # 4. 前端操作介面
+  # 4. 前端介面
   openwebui:
     image: ghcr.io/open-webui/open-webui:latest
     container_name: openwebui
